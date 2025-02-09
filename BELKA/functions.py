@@ -9,9 +9,18 @@ from transformers import AutoTokenizer, AutoModel
 from xgboost import XGBClassifier as xgb
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix, roc_curve, roc_auc_score
+import streamlit as st
 
 tokenizer = AutoTokenizer.from_pretrained("seyonec/ChemBERTa-zinc-base-v1")
 model = AutoModel.from_pretrained("seyonec/ChemBERTa-zinc-base-v1")
+
+@st.cache_resource
+def load_model():
+    with open("./xgb_cls.pkl", "rb") as f:
+        model = pickle.load(f)
+    return model
+
+xgb_cls = load_model()
 
 
 class Prediction:
@@ -39,11 +48,11 @@ class Prediction:
             
 
         #Validate protein name
-        if self.data['protein_name'].eq('sEH').all():
+        if not self.data['protein_name'].eq('sEH').all():
             raise ValueError('Protein name must be sEH')
             
         #NaN values check
-        if self.data.isna().any():
+        if self.data.isna().any(axis=None):
             self.data = self.data.dropna()
             print('Input data contains NaN values, that have been dropped successfully.')
         
@@ -72,7 +81,7 @@ class Prediction:
 
         return mol is not None
     
-    def smiles_embeddings(smiles:str):
+    def smiles_embeddings(self, smiles:str):
 
         """
         Smiles to BERT Embeddings
@@ -90,7 +99,7 @@ class Prediction:
     def predict(self):
 
 
-        self.data_validation(self.data)
+        self.data_validation()
 
 
         #Bert Embeddings for the input
@@ -100,20 +109,15 @@ class Prediction:
         self.data['molecule_embedding'] = self.data['molecule_smiles'].apply(self.smiles_embeddings)
 
         #Data transformation
-        X = self.data[['buildingblock1_embedding', 'buildingblock2_embedding', 'buildingblock3_embedding']]
-        y = self.data['binds']
-
+        X = self.data[['buildingblock1_embedding', 'buildingblock2_embedding', 'buildingblock3_embedding', 'molecule_embedding']]
 
         X_test = np.array(X.map(lambda x: np.array(x).tolist()).values.tolist())
-        X_test = np.array([np.concatenate(row) for row in X])
+        X_test = np.array([np.concatenate(row) for row in X_test])
 
-        model_xgb = pickle.load('./xgb_cls.pkl')
+        y_pred = xgb_cls.predict(X_test.tolist())
+        y_pred_proba = xgb_cls.predict_proba(X_test.tolist())[:, 1]
 
-        y_pred = model_xgb.predict(X_test.tolist())
-        y_pred_proba = model_xgb.predict_proba(X_test.tolist())[:, 1]
-        fpr, tpr, thresholds = roc_curve(y, y_pred_proba)
-
-        return y_pred, y_pred_proba, fpr, tpr, thresholds, X_test
+        return y_pred, y_pred_proba, self.data
 
 
 class Analysis:
@@ -154,9 +158,9 @@ class Analysis:
 
         if mol is not None:
 
-            wt = Descriptors.Molwt(smiles)
-            log_p = Descriptors.MolLogP(smiles)
-            tpsa = Descriptors.TPSA(smiles)
+            wt = Descriptors.MolWt(mol)
+            log_p = Descriptors.MolLogP(mol)
+            tpsa = Descriptors.TPSA(mol)
 
             return wt, log_p, tpsa
         
@@ -171,16 +175,16 @@ class Analysis:
         """
 
         # Calculate descriptors for the molecule
-        self.data['mol_wt'], self.data['mol_log_p'], self.data['tpsa'] = zip(*self.data['molecule_smiles'].apply(self.calculate_descriptors))
+        self.data['mol_wt'], self.data['mol_log_p'], self.data['mol_tpsa'] = zip(*self.data['molecule_smiles'].apply(self.calculate_descriptors))
 
         # Calculate descriptors for each building block
-        self.data['block_1_wt'], self.data['block_1_log_p'], self.data['block_1_tpsa'] = zip(*self.data['buildingblock1_embedding'].apply(self.calculate_descriptors))
-        self.data['block_2_wt'], self.data['block_2_log_p'], self.data['block_2_tpsa'] = zip(*self.data['buildingblock2_embedding'].apply(self.calculate_descriptors))
-        self.data['block_3_wt'], self.data['block_3_log_p'], self.data['block_3_tpsa'] = zip(*self.data['buildingblock3_embedding'].apply(self.calculate_descriptors))
+        self.data['block_1_wt'], self.data['block_1_log_p'], self.data['block_1_tpsa'] = zip(*self.data['buildingblock1_smiles'].apply(self.calculate_descriptors))
+        self.data['block_2_wt'], self.data['block_2_log_p'], self.data['block_2_tpsa'] = zip(*self.data['buildingblock2_smiles'].apply(self.calculate_descriptors))
+        self.data['block_3_wt'], self.data['block_3_log_p'], self.data['block_3_tpsa'] = zip(*self.data['buildingblock3_smiles'].apply(self.calculate_descriptors))
 
         self.data['prediction'] = self.y_pred
 
-    def plot_descriptor_distributions(self):
+    def plot_descriptor_distributions(self, output = 'streamlit'):
 
         """
 
@@ -193,21 +197,28 @@ class Analysis:
 
         for descriptor in descriptors:
 
+            if output == 'streamlit':
+                st.write(f"### {descriptor.capitalize()} Distributions")
+
             plt.figure(figsize = (15, 10))
 
             for i, block in enumerate(blocks):
 
-                plt.subplot(2, 2, i + 1)
-                sns.histplot(self.data[f'{block}_{descriptor}'], kde=True, bins=30)
-                plt.title(f'{block.capitalize()} {descriptor.capitalize()} Distribution')
-                plt.xlabel(f'{descriptor.capitalize()}')
-                plt.ylabel('Frequency')
+                fig, ax = plt.subplots()
+                sns.histplot(self.data[f'{block}_{descriptor}'], kde=True, bins=30, ax=ax)
+                ax.set_title(f'{block.capitalize()} {descriptor.capitalize()} Distribution')
+                ax.set_xlabel(f'{descriptor.capitalize()}')
+                ax.set_ylabel('Frequency')
 
-            plt.tight_layout()
-            plt.show()
+            if output == 'streamlit':
+                st.pyplot(fig)
+            elif output == 'console':
+                plt.show()
+
+            #plt.close(fig)
 
 
-    def threshold_analysis(self):
+    def threshold_analysis(self, output='streamlit'):
 
         """
 
@@ -219,31 +230,32 @@ class Analysis:
 
         for descriptor in descriptors:
 
-            plt.figure(figsize=(15, 10))
+            if output == 'streamlit':
+                st.write(f"### {descriptor.capitalize()} vs Prediction")
 
-            for i, block in enumerate(blocks):
+            for block in blocks:
 
-                plt.subplot(2, 2, i + 1)
-                sns.boxplot(x='prediction', y=f'{block}_{descriptor}', data=self.data)
-                plt.title(f'{block.capitalize()} {descriptor.capitalize()} vs Prediction')
-                plt.xlabel('Prediction (0 or 1)')
-                plt.ylabel(f'{descriptor.capitalize()}')
+                fig, ax = plt.subplots()
+                sns.boxplot(x='prediction', y=f'{block}_{descriptor}', data=self.data, ax=ax)
+                ax.set_title(f'{block.capitalize()} {descriptor.capitalize()} vs Prediction')
+                ax.set_xlabel('Prediction (0 or 1)')
+                ax.set_ylabel(f'{descriptor.capitalize()}')
 
-            plt.tight_layout()
+        if output == 'streamlit':
+            st.pyplot(fig)
+        elif output == 'console':
             plt.show()
+        #plt.close(fig)
 
-    def run_analysis(self):
+    def run_analysis(self, output='streamlit'):
         """
 
         Run the full analysis pipeline
 
         """
         self.calculate_all_descriptors()
-
-        self.plot_descriptor_distributions()
-
-        self.threshold_analysis()
-
+        self.plot_descriptor_distributions(output=output)
+        self.threshold_analysis(output=output)
 
 
 
