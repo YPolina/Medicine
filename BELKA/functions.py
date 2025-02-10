@@ -3,10 +3,15 @@ import numpy as np
 import pickle
 import torch
 from rdkit.Chem import Descriptors, MolFromSmiles
+from rdkit.Chem import rdMolDescriptors
 import matplotlib.pyplot as plt
+import networkx as nx
+import plotly.graph_objects as go
 import seaborn as sns
+import plotly.express as px
 from transformers import AutoTokenizer, AutoModel
 from xgboost import XGBClassifier as xgb
+from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix, roc_curve, roc_auc_score
 import streamlit as st
@@ -161,27 +166,30 @@ class Analysis:
             wt = Descriptors.MolWt(mol)
             log_p = Descriptors.MolLogP(mol)
             tpsa = Descriptors.TPSA(mol)
+            rotatable_bonds = rdMolDescriptors.CalcNumRotatableBonds(mol)
+            heavy_atoms = Descriptors.HeavyAtomCount(mol)
 
-            return wt, log_p, tpsa
+            return wt, log_p, tpsa, rotatable_bonds, heavy_atoms
         
         else:
-            return np.nan, np.nan, np.nan
+            return np.nan, np.nan, np.nan, np.nan, np.nan
         
     def calculate_all_descriptors(self):
 
         """
-        Calculate descriptors for the molecule and each building block
+        Calculate descriptors for each building block
 
         """
 
-        # Calculate descriptors for the molecule
-        self.data['mol_wt'], self.data['mol_log_p'], self.data['mol_tpsa'] = zip(*self.data['molecule_smiles'].apply(self.calculate_descriptors))
-
         # Calculate descriptors for each building block
-        self.data['block_1_wt'], self.data['block_1_log_p'], self.data['block_1_tpsa'] = zip(*self.data['buildingblock1_smiles'].apply(self.calculate_descriptors))
-        self.data['block_2_wt'], self.data['block_2_log_p'], self.data['block_2_tpsa'] = zip(*self.data['buildingblock2_smiles'].apply(self.calculate_descriptors))
-        self.data['block_3_wt'], self.data['block_3_log_p'], self.data['block_3_tpsa'] = zip(*self.data['buildingblock3_smiles'].apply(self.calculate_descriptors))
+        self.data['block_1_wt'], self.data['block_1_log_p'], self.data['block_1_tpsa'], \
+        self.data['block_1_rotatable_bonds'], self.data['block_1_heavy_atoms'] = zip(*self.data['buildingblock1_smiles'].apply(self.calculate_descriptors))
 
+        self.data['block_2_wt'], self.data['block_2_log_p'], self.data['block_2_tpsa'], \
+        self.data['block_2_rotatable_bonds'], self.data['block_2_heavy_atoms'] = zip(*self.data['buildingblock2_smiles'].apply(self.calculate_descriptors))
+
+        self.data['block_3_wt'], self.data['block_3_log_p'], self.data['block_3_tpsa'], \
+        self.data['block_3_rotatable_bonds'], self.data['block_3_heavy_atoms'] = zip(*self.data['buildingblock3_smiles'].apply(self.calculate_descriptors))
         self.data['prediction'] = self.y_pred
 
     def plot_descriptor_distributions(self, output = 'streamlit'):
@@ -192,30 +200,31 @@ class Analysis:
 
         """
 
-        descriptors = ['wt', 'log_p', 'tpsa']
-        blocks = ['mol', 'block_1', 'block_2', 'block_3']
+        descriptors = ['wt', 'log_p', 'tpsa', 'rotatable_bonds', 'heavy_atoms']
+        blocks = ['block_1', 'block_2', 'block_3']
 
         for descriptor in descriptors:
 
             if output == 'streamlit':
                 st.write(f"### {descriptor.capitalize()} Distributions")
 
-            plt.figure(figsize = (15, 10))
+            df_list = []
+            for block in blocks:
+                df_list.append(pd.DataFrame({
+                    'Block': block,
+                    descriptor: self.data[f'{block}_{descriptor}']
+                }))
+            df = pd.concat(df_list)
 
-            for i, block in enumerate(blocks):
-
-                fig, ax = plt.subplots()
-                sns.histplot(self.data[f'{block}_{descriptor}'], kde=True, bins=30, ax=ax)
-                ax.set_title(f'{block.capitalize()} {descriptor.capitalize()} Distribution')
-                ax.set_xlabel(f'{descriptor.capitalize()}')
-                ax.set_ylabel('Frequency')
+            fig = px.histogram(df, x=descriptor, color='Block', marginal="rug", nbins=30,
+                               title=f'{descriptor.capitalize()} Distributions',
+                               labels={descriptor: descriptor.capitalize()},
+                               hover_data=df.columns)
 
             if output == 'streamlit':
-                st.pyplot(fig)
+                st.plotly_chart(fig)
             elif output == 'console':
-                plt.show()
-
-            #plt.close(fig)
+                fig.show()
 
 
     def threshold_analysis(self, output='streamlit'):
@@ -225,27 +234,80 @@ class Analysis:
         Perform threshold analysis for each descriptor based on predictions
 
         """
-        descriptors = ['wt', 'log_p', 'tpsa']
-        blocks = ['mol', 'block_1', 'block_2', 'block_3']
+        descriptors = ['wt', 'log_p', 'tpsa', 'rotatable_bonds', 'heavy_atoms']
+        blocks = ['block_1', 'block_2', 'block_3']
 
         for descriptor in descriptors:
 
             if output == 'streamlit':
                 st.write(f"### {descriptor.capitalize()} vs Prediction")
 
+            df_list = []
             for block in blocks:
+                df_list.append(pd.DataFrame({
+                    'Block': block,
+                    'Prediction': self.data['prediction'],
+                    descriptor: self.data[f'{block}_{descriptor}']
+                }))
+            df = pd.concat(df_list)
 
-                fig, ax = plt.subplots()
-                sns.boxplot(x='prediction', y=f'{block}_{descriptor}', data=self.data, ax=ax)
-                ax.set_title(f'{block.capitalize()} {descriptor.capitalize()} vs Prediction')
-                ax.set_xlabel('Prediction (0 or 1)')
-                ax.set_ylabel(f'{descriptor.capitalize()}')
+            fig = px.box(df, x='Prediction', y=descriptor, color='Block',
+                         title=f'{descriptor.capitalize()} vs Prediction',
+                         labels={descriptor: descriptor.capitalize()},
+                         hover_data=df.columns)
 
-        if output == 'streamlit':
-            st.pyplot(fig)
-        elif output == 'console':
-            plt.show()
-        #plt.close(fig)
+            if output == 'streamlit':
+                st.plotly_chart(fig)
+            elif output == 'console':
+                fig.show()
+
+    def plot_scatter_matrix(self, output='streamlit'):
+
+        """
+
+        Plot scatter plot matrix for descriptors
+
+        """
+        descriptors = ['wt', 'log_p', 'tpsa', 'rotatable_bonds', 'heavy_atoms']
+        blocks = ['block_1', 'block_2', 'block_3']
+
+        for block in blocks:
+            if output == 'streamlit':
+                st.write(f"### Scatter Plot Matrix for {block.capitalize()}")
+            df = self.data[[f'{block}_{desc}' for desc in descriptors] + ['prediction']]
+            df.columns = descriptors + ['prediction']
+            fig = px.scatter_matrix(df, dimensions=descriptors, color='prediction', title=f'Scatter Plot Matrix for {block.capitalize()}')
+            if output == 'streamlit':
+                st.plotly_chart(fig)
+            elif output == 'console':
+                fig.show()
+
+    def plot_3d_pca(self, output='streamlit'):
+        """
+
+        Plot 3D PCA for descriptors
+
+        """
+
+        descriptors = ['wt', 'log_p', 'tpsa', 'rotatable_bonds', 'heavy_atoms']
+        blocks = ['block_1', 'block_2', 'block_3']
+
+        for block in blocks:
+            if output == 'streamlit':
+                st.write(f"### 3D PCA for {block.capitalize()}")
+            df = self.data[[f'{block}_{desc}' for desc in descriptors]]
+            pca = PCA(n_components=3)
+            pca_result = pca.fit_transform(df)
+            df_pca = pd.DataFrame(data=pca_result, columns=['PC1', 'PC2', 'PC3'])
+            df_pca['prediction'] = self.data['prediction']
+            fig = px.scatter_3d(df_pca, x='PC1', y='PC2', z='PC3', color='prediction', title=f'3D PCA for {block.capitalize()}')
+            if output == 'streamlit':
+                st.plotly_chart(fig)
+            elif output == 'console':
+                fig.show()
+
+
+
 
     def run_analysis(self, output='streamlit'):
         """
@@ -256,6 +318,8 @@ class Analysis:
         self.calculate_all_descriptors()
         self.plot_descriptor_distributions(output=output)
         self.threshold_analysis(output=output)
+        self.plot_scatter_matrix(output=output)
+        self.plot_3d_pca(output=output)
 
 
 

@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from pathlib import Path
 
 import functions
 import importlib
@@ -13,9 +14,9 @@ uploaded_file = st.file_uploader('Load file with molecules in .csv or .parquet f
 
 if uploaded_file is not None:
 
-    if uploaded_file.type == 'csv':
+    if Path(uploaded_file.name).suffix == '.csv':
         data = pd.read_csv(uploaded_file)
-    elif uploaded_file.type == 'parquet':
+    elif Path(uploaded_file.name).suffix == '.parquet':
         data = pd.read_parquet(uploaded_file)
     else:
         raise TypeError('Expected file in .csv or .parquet format')

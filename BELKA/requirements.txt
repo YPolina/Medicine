@@ -1,0 +1,15 @@
+pyspark == 3.4.4
+scikit-learn
+rdkit
+transformers
+matplotlib
+seaborn
+numpy
+pandas
+xgboost
+plotly
+datamol
+torch
+umap
+streamlit
+networkx
