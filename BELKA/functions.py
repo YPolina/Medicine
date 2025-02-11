@@ -2,7 +2,8 @@ import pandas as pd
 import numpy as np
 import pickle
 import torch
-from rdkit.Chem import Descriptors, MolFromSmiles
+from rdkit import Chem
+from rdkit.Chem import Descriptors, MolFromSmiles, DataStructs
 from rdkit.Chem import rdMolDescriptors
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -15,17 +16,18 @@ from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix, roc_curve, roc_auc_score
 import streamlit as st
+from rdkit.Chem import rdFingerprintGenerator
 
-tokenizer = AutoTokenizer.from_pretrained("seyonec/ChemBERTa-zinc-base-v1")
-model = AutoModel.from_pretrained("seyonec/ChemBERTa-zinc-base-v1")
 
-@st.cache_resource
 def load_model():
-    with open("./xgb_cls.pkl", "rb") as f:
+    with open("./lightgbm_cls.pkl", "rb") as f:
         model = pickle.load(f)
     return model
 
-xgb_cls = load_model()
+lightgbm_cls = load_model()
+
+
+
 
 
 class Prediction:
@@ -35,6 +37,7 @@ class Prediction:
         "Class initialization"
 
         self.data = data.copy()
+        self.fpg = rdFingerprintGenerator.GetMorganGenerator(radius=3, fpSize=700, useBondTypes=True, includeChirality=True, includeRingMembership=True)
 
     def data_validation(self):
         """
@@ -85,20 +88,50 @@ class Prediction:
         mol = MolFromSmiles(smiles)
 
         return mol is not None
+
+
+    def compute_fn(self, smiles):
+        
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return np.zeros(700, dtype=np.int8)
+        
+        ao = rdFingerprintGenerator.AdditionalOutput()
+        ao.AllocateBitInfoMap()
+        
+        
+        fp = self.fpg.GetCountFingerprint(mol, additionalOutput=ao)
+
+        bit_info = ao.GetBitInfoMap()
+        arr = np.zeros(700, dtype=np.int8)
+        DataStructs.ConvertToNumpyArray(fp, arr)
     
-    def smiles_embeddings(self, smiles:str):
-
+        return arr, bit_info
+    
+    def feature_engineering(self, smiles_columns = ['molecule_smiles'], drop_columns=['id', 'molecule_smiles', 'buildingblock1_smiles', 'buildingblock2_smiles', 'buildingblock3_smiles', 'protein_name']):
         """
-        Smiles to BERT Embeddings
-        
+        Computes fingerprints for specified SMILES columns, concatenates them, and prepares feature matrix (X)
+
+        Args:
+            
+            smiles_columns (list): List of column names containing SMILES strings
+            drop_columns (list): List of columns to drop from the final feature matrix (default: ['id', 'molecule_smiles'])
+
+        Returns:
+            X (pd.DataFrame): Feature matrix containing concatenated fingerprints
         """
 
-        tokens = tokenizer(smiles, padding = True, truncation = True, max_length = 512, return_tensors = 'pt')
+        results = self.data['molecule_smiles'].apply(self.compute_fn)
+        self.data['fp'] = results.apply(lambda x: x[0])
+        bit_infos = results.apply(lambda x: x[1]).tolist()
+        self.data.drop(drop_columns, axis=1, inplace=True)
+        fingerprint_df = pd.DataFrame(self.data["fp"].to_list(), index=self.data.index)
+        self.data = pd.concat([self.data.drop(columns=["fp"]), fingerprint_df], axis=1)
         
-        with torch.no_grad():
-            outputs = model(**tokens)
-        
-        return outputs.last_hidden_state.mean(dim = 1).squeeze().cpu().numpy().tolist()
+        feature_cols = [col for col in self.data.columns if col not in drop_columns]
+        X = self.data[feature_cols]
+
+        return X, bit_infos
 
     
     def predict(self):
@@ -106,23 +139,12 @@ class Prediction:
 
         self.data_validation()
 
-
-        #Bert Embeddings for the input
-        self.data['buildingblock1_embedding'] = self.data['buildingblock1_smiles'].apply(self.smiles_embeddings)
-        self.data['buildingblock2_embedding'] = self.data['buildingblock2_smiles'].apply(self.smiles_embeddings)
-        self.data['buildingblock3_embedding'] = self.data['buildingblock3_smiles'].apply(self.smiles_embeddings)
-        self.data['molecule_embedding'] = self.data['molecule_smiles'].apply(self.smiles_embeddings)
-
         #Data transformation
-        X = self.data[['buildingblock1_embedding', 'buildingblock2_embedding', 'buildingblock3_embedding', 'molecule_embedding']]
+        X, bit_infos = self.feature_engineering()
 
-        X_test = np.array(X.map(lambda x: np.array(x).tolist()).values.tolist())
-        X_test = np.array([np.concatenate(row) for row in X_test])
+        y_pred = lightgbm_cls.predict(X)
 
-        y_pred = xgb_cls.predict(X_test.tolist())
-        y_pred_proba = xgb_cls.predict_proba(X_test.tolist())[:, 1]
-
-        return y_pred, y_pred_proba, self.data
+        return y_pred, X, bit_infos
 
 
 class Analysis:
@@ -305,6 +327,7 @@ class Analysis:
                 st.plotly_chart(fig)
             elif output == 'console':
                 fig.show()
+
 
 
 
