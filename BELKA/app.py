@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+import sys
 
-import functions
-import importlib
-importlib.reload(functions)
-from functions import *
+sys.modules.pop("functionality.prediction", None)
+sys.modules.pop("functionality.analysis", None)
+from functionality.prediction import Predictor
+from functionality.analysis import Analyser
 
 
 st.title('Prediction of binding ligands with protein sEH')
@@ -22,19 +23,21 @@ if uploaded_file is not None:
         raise TypeError('Expected file in .csv or .parquet format')
     
 
-    predictor = Prediction(data)
+    predictor = Predictor(data.drop('binds', axis = 1))
+    y_pred, y_pred_prob, data, bit_infos = predictor.predict()
 
-    y_pred, y_pred_proba, processed_data = predictor.predict()
+    data['Predicted Class'] = y_pred
+    data['Predicted Probability'] = y_pred_prob[:, 1]
 
     st.write('Prediction Results: ')
 
     st.write(pd.DataFrame({
         "Predicted class": y_pred,
-        "Binding Probability": y_pred_proba
+        "Binding Probability": y_pred_prob[:, 1]
     }))
 
 
-    analysis = Analysis(processed_data, y_pred)
-    analysis.run_analysis(output='streamlit')
+    analyzer = Analyser(data, bit_infos)
+    analyzer.run_visualizations()
 
 
