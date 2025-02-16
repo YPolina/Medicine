@@ -13,3 +13,5 @@ torch
 umap
 streamlit
 networkx
+scipy
+statsmodels

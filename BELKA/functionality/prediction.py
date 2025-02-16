@@ -139,4 +139,4 @@ class Predictor:
         y_pred = lgb_cls.predict(X)
         y_pred_prob = lgb_cls.predict_proba(X)
 
-        return y_pred, y_pred_prob, self.data, bit_infos
+        return y_pred, y_pred_prob, self.data, bit_infos, lgb_cls
