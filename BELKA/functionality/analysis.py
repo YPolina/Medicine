@@ -319,9 +319,6 @@ class Analyser:
         descriptors = ['wt', 'log_p', 'tpsa', 'rotatable_bonds', 'heavy_atoms']
         blocks = ['block_1', 'block_2', 'block_3']
 
-        selected_block = st.selectbox("Select Block", blocks, key="stat_block_select")
-        selected_desc = st.selectbox("Select Descriptor", descriptors, key="stat_desc_select")
-
         results = []
 
        
