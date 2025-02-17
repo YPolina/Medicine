@@ -23,21 +23,19 @@ if uploaded_file is not None:
         raise TypeError('Expected file in .csv or .parquet format')
     
 
-    predictor = Predictor(data.drop('binds', axis = 1))
-    y_pred, y_pred_prob, data, bit_infos = predictor.predict()
+    predictor = Predictor(data)
+    data, bit_infos, model = predictor.predict()
 
-    data['Predicted Class'] = y_pred
-    data['Predicted Probability'] = y_pred_prob[:, 1]
 
     st.write('Prediction Results: ')
 
     st.write(pd.DataFrame({
-        "Predicted class": y_pred,
-        "Binding Probability": y_pred_prob[:, 1]
+        "Predicted class": data['Predicted Class'],
+        "Binding Probability": data['Predicted Probability']
     }))
 
 
-    analyzer = Analyser(data, bit_infos)
+    analyzer = Analyser(data, bit_infos, model)
     analyzer.run_visualizations()
 
 

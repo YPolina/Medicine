@@ -24,7 +24,7 @@ class Predictor:
         "Class initialization"
 
         self.data = data.copy()
-        self.fpg = rdFingerprintGenerator.GetMorganGenerator(radius=3, fpSize=700, useBondTypes=True, includeChirality=True, includeRingMembership=True)
+        self.fpg = rdFingerprintGenerator.GetMorganGenerator(radius=3, fpSize=1024, useBondTypes=True, includeChirality=True, includeRingMembership=True)
 
     def data_validation(self):
         """
@@ -33,9 +33,6 @@ class Predictor:
         """
         #Check for nessesary columns
         required_columns = ['id', 'buildingblock1_smiles', 'buildingblock2_smiles', 'buildingblock3_smiles', 'molecule_smiles', 'protein_name']
-        for col in self.data.columns:
-            if col not in required_columns:
-                raise ValueError(f'Column {col} not expected.')
         
         for col in required_columns:
             if col not in self.data.columns:
@@ -84,7 +81,7 @@ class Predictor:
         
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
-            return np.zeros(700, dtype=np.int8)
+            return np.zeros(1024, dtype=np.int8)
         
         ao = rdFingerprintGenerator.AdditionalOutput()
         ao.AllocateBitInfoMap()
@@ -93,7 +90,7 @@ class Predictor:
         fp = self.fpg.GetCountFingerprint(mol, additionalOutput=ao)
 
         bit_info = ao.GetBitInfoMap()
-        arr = np.zeros(700, dtype=np.int8)
+        arr = np.zeros(1024, dtype=np.int8)
         DataStructs.ConvertToNumpyArray(fp, arr)
     
         return arr, bit_info
@@ -114,8 +111,6 @@ class Predictor:
         self.data['fp'] = results.apply(lambda x: x[0])
         bit_infos = results.apply(lambda x: x[1]).tolist()
 
-        self.data.drop(['buildingblock1_smiles', 'buildingblock2_smiles', 'buildingblock3_smiles'], axis = 1, inplace = True)
-
         protein_dummies = pd.get_dummies(self.data['protein_name'], prefix='protein', dtype = 'int')
 
         fingerprint_df = pd.DataFrame(self.data["fp"].to_list(), index=self.data.index)
@@ -131,7 +126,7 @@ class Predictor:
         #Data transformation
         bit_infos = self.feature_engineering()
 
-        columns = ['id', 'molecule_smiles', 'protein_name']
+        columns = ['id', 'molecule_smiles', 'protein_name', 'buildingblock1_smiles', 'buildingblock2_smiles', 'buildingblock3_smiles', 'binds']
 
         features = [feature for feature in self.data.columns if feature not in columns]
         X = self.data[features]
@@ -139,4 +134,7 @@ class Predictor:
         y_pred = lgb_cls.predict(X)
         y_pred_prob = lgb_cls.predict_proba(X)
 
-        return y_pred, y_pred_prob, self.data, bit_infos
+        self.data['Predicted Class'] = y_pred
+        self.data['Predicted Probability'] = y_pred_prob[:, 1]
+
+        return self.data, bit_infos, lgb_cls
