@@ -7,7 +7,7 @@ from rdkit.Chem import MolFromSmiles, DataStructs, rdFingerprintGenerator
 from rdkit import Chem
 
 def load_model():
-    with open("./lgb_cls.pkl", "rb") as f:
+    with open("./lgb_cls_10_mln.pkl", "rb") as f:
         model = pickle.load(f)
     return model
 
@@ -24,7 +24,7 @@ class Predictor:
         "Class initialization"
 
         self.data = data.copy()
-        self.fpg = rdFingerprintGenerator.GetMorganGenerator(radius=3, fpSize=1024, useBondTypes=True, includeChirality=True, includeRingMembership=True)
+        self.fpg = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=1024, useBondTypes=True, includeChirality=True, includeRingMembership=True)
 
     def data_validation(self):
         """
