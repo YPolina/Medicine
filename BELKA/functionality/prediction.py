@@ -138,3 +138,5 @@ class Predictor:
         self.data['Predicted Probability'] = y_pred_prob[:, 1]
 
         return self.data, bit_infos, lgb_cls
+    
+
