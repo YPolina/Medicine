@@ -8,13 +8,13 @@ from rdkit.DataStructs import ConvertToNumpyArray
 from transformers import AutoTokenizer, AutoModel
 
 protein_tokenizer = AutoTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
-protein_model = AutoModel.from_pretrained("facebook/esm2_t33_650M_UR50D")
+#protein_model = AutoModel.from_pretrained("facebook/esm2_t33_650M_UR50D")
 
 
 class FeatureEngineering:
 
     def __init__(self, batch, feature_type, proteins=['HSA', 'BRD4', 'sEH'], 
-                 model=None, tokenizer=None, protein_model=protein_model, protein_tokenizer=protein_tokenizer, max_length=142):
+                 model=None, tokenizer=None, max_length=142):
         """
 
         Args:
@@ -23,8 +23,6 @@ class FeatureEngineering:
             proteins (list): List of protein names for consistent one-hot encoding
             model (transformers.PreTrainedModel, optional): Transformer model for SMILES embeddings
             tokenizer (transformers.PreTrainedTokenizer, optional): Tokenizer for SMILES
-            protein_model (transformers.PreTrainedModel, optional): Transformer model for protein embeddings
-            protein_tokenizer (transformers.PreTrainedTokenizer, optional): Tokenizer for protein sequences
             max_length (int, optional): Max length for CNN SMILES encoding
 
         """
@@ -33,8 +31,6 @@ class FeatureEngineering:
         self.proteins = proteins
         self.model = model
         self.tokenizer = tokenizer
-        self.protein_model = protein_model
-        self.protein_tokenizer = protein_tokenizer
         self.max_length = max_length
 
     def replace_smiles(self, smile):
@@ -61,19 +57,14 @@ class FeatureEngineering:
         self.batch["molecule_smiles"] = self.batch["molecule_smiles"].apply(self.replace_smiles)
         
         if self.feature_type == "GBT":
-            X_molecule = self.GBT_features()
+            X_batch = self.GBT_features()
         elif self.feature_type == "CNN":
-            X_molecule = self.CNN_features()
+            X_batch = self.CNN_features()
         elif self.feature_type == "embeddings":
-            X_molecule = self.compute_embeddings()
+            X_batch = self.compute_embeddings()
         else:
             raise ValueError("Invalid feature_type. Choose from 'GBT', 'CNN', or 'embeddings'.")
 
-        # Encode proteins according to the chosen feature type
-        X_protein = self.encode_proteins()
-
-        # Combine molecule and protein features
-        X_batch = pd.concat([X_molecule, X_protein], axis=1)
 
         return X_batch
 
@@ -144,31 +135,3 @@ class FeatureEngineering:
         embeddings = outputs.last_hidden_state.mean(dim=1).cpu().numpy()
         return pd.DataFrame(embeddings)
 
-    def encode_proteins(self):
-        """
-        Encodes protein sequences according to the chosen feature extraction method
-        """
-        if self.feature_type in ["GBT", "CNN"]:
-            # Use one-hot encoding for tree-based models and CNNs
-            protein_df = pd.get_dummies(self.batch['protein_name'], prefix='protein', dtype=int)
-            protein_df = protein_df.reindex(columns=[f'protein_{p}' for p in self.proteins], fill_value=0)
-            return protein_df
-
-        elif self.feature_type == "embeddings":
-            # Use transformer embeddings for proteins in deep learning models
-            if self.protein_model is None or self.protein_tokenizer is None:
-                raise ValueError("Protein model and tokenizer must be provided for encoding proteins")
-
-            sequences = self.batch["protein_name"].tolist()
-            tokens = self.protein_tokenizer(sequences, padding=True, truncation=True, return_tensors="pt")
-
-            with torch.no_grad():
-                outputs = self.protein_model(**tokens)
-
-            embeddings = outputs.last_hidden_state.mean(dim=1).cpu().numpy()
-            return pd.DataFrame(embeddings)
-
-        else:
-            raise ValueError("Invalid feature type for protein encoding")
-
-    
