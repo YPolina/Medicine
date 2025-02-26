@@ -28,12 +28,10 @@ class CustomDataset(Dataset):
         Args:
             data (pd.DataFrame): Data with 'molecule_smiles' and 'binds' columns
         """
-        self.smiles = data['molecule_smiles'].values
         self.labels = data['binds'].values
-        self.features = None
 
     def __len__(self):
-        return len(self.smiles)
+        pass
     
 
     def __getitem__(self, idx):
@@ -84,48 +82,36 @@ class CNN_Dataset(CustomDataset):
         return features, label
     
 
-class Emb_Dataset(CustomDataset):
-    def __init__(self, data, model_name):
-        """
-        Dataset that generates additional features for SMILES strings
+class EmbDataset(Dataset):
+    def __init__(self, data, embeddings_path):
 
-        Args:
-            data (pd.DataFrame): Data with 'molecule_smiles' and 'binds' columns
-            model_name (str): The pre-trained model name
+        self.data = data
+        self.embeddings_path = embeddings_path
+        self.labels = data['binds'].values 
 
-        """
-        super().__init__(data)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name)
-        
-        self.model.eval()
-
-    def create_features(self, smiles_batch):
-        """
-        Encodes SMILES strings into fixed-length numerical representations using CNN features.
-
-        Args:
-            smiles_batch (list of str): List of SMILES strings.
-
-        Returns:
-            Tensor: Tokenize SMILES representations.
-        """
-        tokens = self.tokenizer(smiles_batch, padding=True, truncation=True, max_length=512, return_tensors='pt')
-
-        with torch.no_grad():
-            outputs = self.model(**tokens)
-    
-        cls_embeddings = outputs.last_hidden_state[:, 0, :]  
-        
-        return cls_embeddings
+    def __len__(self):
+        return len(self.data)
 
     def __getitem__(self, idx):
-       
-        # Create embeddings for the SMILES string
-        #from [1, embedding_size] to [embedding_size])
-        features = self.create_features([self.smiles[idx]]).squeeze(0)
-        label = torch.tensor(self.labels[idx], dtype=torch.long)
-        return features, label
+        """
+        Returns embeddings and labels for a given index.
+
+        Args:
+            idx (int): Index of the data point.
+
+        Returns:
+            features (torch.Tensor): Embeddings (features) for the given index.
+            label (torch.Tensor): Label for the given index.
+        """
+        with open(self.embeddings_path, "rb") as f:
+
+            for i, emb in enumerate(pickle.load(f)):
+                if i == idx:
+                    features = torch.tensor(emb, dtype=torch.float32)
+                    label = torch.tensor(self.labels[idx], dtype=torch.long) 
+                    return features, label
+
+        raise IndexError("Index out of range")
     
 class GBT_Dataset(CustomDataset):
     def __init__(self, data, ):
@@ -224,7 +210,7 @@ def train_model(model_name, protein_name, model, train_loader, val_loader, epoch
 
     # Define checkpointing: Save best model based on validation loss
     checkpoint_callback = ModelCheckpoint(
-        dirpath="./checkpoints",  
+        dirpath="../checkpoints",  
         filename=f"{protein_name}_{model_name}-{{epoch}}-{{val_loss:.4f}}", 
         monitor="val_loss",
         save_top_k=3,
@@ -238,7 +224,7 @@ def train_model(model_name, protein_name, model, train_loader, val_loader, epoch
         accelerator="auto",
         devices=1,
         log_every_n_steps=2,
-        callbacks=[checkpoint_callback],
+        #callbacks=[checkpoint_callback],
         logger = logger
     )
     trainer.fit(model, train_loader, val_loader)

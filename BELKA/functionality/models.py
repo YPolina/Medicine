@@ -14,54 +14,51 @@ import pandas as pd
 
 class BaseBinaryClassifierLightning(pl.LightningModule):
     def __init__(self, learning_rate=2e-5):
-        super(BaseBinaryClassifierLightning, self).__init__()
+        super().__init__()
         self.save_hyperparameters()
         self.learning_rate = learning_rate
-        self.auroc = BinaryAUROC()
         self.loss_fn = nn.CrossEntropyLoss()
-        self.validation_step_outputs = []
-    
+        self.auroc = BinaryAUROC()
+
+        self.train_loss = 0
+        self.val_loss = 0
+        self.train_auc = 0
+        self.val_auc = 0
+
     def training_step(self, batch, batch_idx):
-        smiles_batch, labels = batch 
-        logits = self(smiles_batch)
-        loss = self.loss_fn(logits.squeeze(), labels)
+        features, labels = batch
+        logits = self(features)
+        loss = self.loss_fn(logits, labels)
+        probs = torch.sigmoid(logits[:, 1])
+        auc = self.auroc(probs, labels)
+
+        self.log("train_loss", np.round(loss.detach().cpu().numpy(), 3), prog_bar=True, on_step=False, on_epoch=True)
+        self.log("train_auc", np.round(auc.detach().numpy(), 3), prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        smiles_batch, labels = batch 
-        logits = self(smiles_batch)
-        loss = self.loss_fn(logits.squeeze(), labels)
-        auroc = self.auroc(logits.squeeze(), labels)
+        self.eval()
 
-        self.log("val_loss", loss, prog_bar=True, logger=True, on_epoch=True)
-        self.log("val_auroc", auroc, prog_bar=True, logger=True, on_epoch=True)
+        with torch.no_grad():
+            features, labels = batch
+            logits = self(features)
+            loss = self.loss_fn(logits, labels)
+            probs = torch.sigmoid(logits[:, 1])
+            auc = self.auroc(probs, labels)
 
-        self.validation_step_outputs.append({"val_loss": loss, "val_auroc": auroc})
-        return {"val_loss": loss, "val_auroc": auroc}
-
-    def on_validation_epoch_end(self):
-        avg_loss = torch.stack([x['val_loss'] for x in self.validation_step_outputs]).mean()
-        avg_auroc = torch.stack([x['val_auroc'] for x in self.validation_step_outputs]).mean()
-
-        avg_loss = round(avg_loss.item(), 3)
-        avg_auroc = round(avg_auroc.item(), 3)
-        
-        self.log("avg_val_loss", avg_loss, prog_bar=True, logger=True)
-        self.log("avg_val_auroc", avg_auroc, prog_bar=True, logger=True)
-
-        self.validation_step_outputs.clear()
-
+        self.log("val_loss", np.round(loss, 3), prog_bar=True, on_step=False, on_epoch=True)
+        self.log("val_auc", np.round(auc, 3), prog_bar=True, on_step=False, on_epoch=True)
+        return loss
+    
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
-        return [optimizer], [scheduler]
-
+        return torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
+    
     def predict(self, batch):
 
         smiles_batch, _ = batch 
         logits = self(smiles_batch)
         probabilities = torch.sigmoid(logits)
-        return probabilities  
+        return probabilities
 
 class CNNBinaryClassifierLightning(BaseBinaryClassifierLightning):
     def __init__(self, input_dim=142, hidden_dim=32, kernel_size=3, output_dim=1, 
