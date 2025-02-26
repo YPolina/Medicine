@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForCausalLM, BitsAndBytesConfig
 from transformers import AutoModel, AutoConfig, LlamaTokenizer, LlamaModel
 from peft import get_peft_model, LoraConfig, TaskType
 import torch.optim as optim
@@ -14,36 +15,47 @@ import pandas as pd
 class BaseBinaryClassifierLightning(pl.LightningModule):
     def __init__(self, learning_rate=2e-5):
         super(BaseBinaryClassifierLightning, self).__init__()
-        
+        self.save_hyperparameters()
         self.learning_rate = learning_rate
         self.auroc = BinaryAUROC()
         self.loss_fn = nn.BCEWithLogitsLoss()
+        self.validation_step_outputs = []
     
     def training_step(self, batch, batch_idx):
-        x, y = batch
-        logits = self(x)
-        loss = self.loss_fn(logits.squeeze(), y)
+
+        smiles_batch, labels = batch 
+        logits = self(smiles_batch)
+        loss = self.loss_fn(logits.squeeze(), labels)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch
-        logits = self(x)
-        loss = self.loss_fn(logits.squeeze(), y)
-        auroc = self.auroc(logits.squeeze(), y)
+        
+        smiles_batch, labels = batch 
+        
+        logits = self(smiles_batch)
+        loss = self.loss_fn(logits.squeeze(), labels)
+        auroc = self.auroc(logits.squeeze(), labels)
+
+        self.validation_step_outputs.append({"val_loss": loss, "val_auroc": auroc})
         return {"val_loss": loss, "val_auroc": auroc}
 
-    def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        avg_auroc = torch.stack([x['val_auroc'] for x in outputs]).mean()
+    def on_validation_epoch_end(self):
+        avg_loss = torch.stack([x['val_loss'] for x in self.validation_step_outputs]).mean()
+        avg_auroc = torch.stack([x['val_auroc'] for x in self.validation_step_outputs]).mean()
 
-        self.log("val_loss", avg_loss, prog_bar=True)
-        self.log("val_auroc", avg_auroc, prog_bar=True)
+        avg_loss = round(avg_loss.item(), 3)
+        avg_auroc = round(avg_auroc.item(), 3)
+
+        self.log("val_loss", avg_loss, prog_bar=True, logger=True)
+        self.log("val_auroc", avg_auroc, prog_bar=True, logger=True)
+
+        self.validation_step_outputs.clear()
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=3, verbose=True)
-
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.1, patience=3, verbose=True
+        )
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
@@ -53,10 +65,10 @@ class BaseBinaryClassifierLightning(pl.LightningModule):
                 "frequency": 1
             }
         }
-    
+
     def predict(self, batch):
 
-        smiles_batch, _ = batch
+        smiles_batch, _ = batch 
         logits = self(smiles_batch)
         probabilities = torch.sigmoid(logits)
         return probabilities  
@@ -184,7 +196,16 @@ class MolLlamaBinaryClassifierLightning(BaseBinaryClassifierLightning):
                  use_lora=True, learning_rate=2e-5):
         super().__init__(learning_rate)
 
-        self.llama = LlamaModel.from_pretrained(llama_model)
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True
+        )
+
+        self.llama = AutoModelForCausalLM.from_pretrained(
+            llama_model,
+            quantization_config=quantization_config,
+            device_map="auto"
+        )
+
 
         if use_lora:
             config = LoraConfig(

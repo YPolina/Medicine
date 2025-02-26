@@ -90,12 +90,10 @@ def train_model(model_name, protein_name, model, train_loader, val_loader, epoch
     trainer = pl.Trainer(
         max_epochs=epochs,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        devices=1,
-        log_every_n_steps=5,
+        log_every_n_steps=2,
         callbacks=[checkpoint_callback]
     )
 
-    # Train the model
     trainer.fit(model, train_loader, val_loader)
 
     return trainer
