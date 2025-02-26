@@ -12,4 +12,8 @@ datamol
 torch
 umap
 streamlit
-networkx
+pytorch_lightning
+findspark
+bitsandbytes
+lightgbm
+peft
