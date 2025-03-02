@@ -5,3 +5,5 @@ leash-BELKA.zip
 /intermediates/models
 /functionality/__pycache__
 /intermediates/embeddings
+/training/logs
+/checkpoints

@@ -12,6 +12,8 @@ from transformers import AutoTokenizer, AutoModel
 import numpy as np
 import tqdm
 import os 
+from torch.utils.data import IterableDataset
+import h5py
 import pickle
 from pytorch_lightning.loggers import CSVLogger
 
@@ -82,36 +84,21 @@ class CNN_Dataset(CustomDataset):
         return features, label
     
 
-class EmbDataset(Dataset):
-    def __init__(self, data, embeddings_path):
-
-        self.data = data
+class IterableEmbDataset(IterableDataset):
+    def __init__(self, embeddings_path):
         self.embeddings_path = embeddings_path
-        self.labels = data['binds'].values 
+        with h5py.File(self.embeddings_path, "r") as h5f:
+            self.length = len(h5f["embeddings"])
 
     def __len__(self):
-        return len(self.data)
+        return self.length
 
-    def __getitem__(self, idx):
-        """
-        Returns embeddings and labels for a given index.
-
-        Args:
-            idx (int): Index of the data point.
-
-        Returns:
-            features (torch.Tensor): Embeddings (features) for the given index.
-            label (torch.Tensor): Label for the given index.
-        """
-        with open(self.embeddings_path, "rb") as f:
-
-            for i, emb in enumerate(pickle.load(f)):
-                if i == idx:
-                    features = torch.tensor(emb, dtype=torch.float32)
-                    label = torch.tensor(self.labels[idx], dtype=torch.long) 
-                    return features, label
-
-        raise IndexError("Index out of range")
+    def __iter__(self):
+        with h5py.File(self.embeddings_path, "r") as h5f:
+            embeddings = h5f["embeddings"]
+            labels = h5f["labels"]
+            for i in range(len(embeddings)):
+                yield torch.tensor(embeddings[i], dtype=torch.float32), torch.tensor(labels[i], dtype=torch.long)
     
 class GBT_Dataset(CustomDataset):
     def __init__(self, data, ):
