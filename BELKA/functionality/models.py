@@ -133,36 +133,6 @@ class ChemBertaBinaryClassifierLightning(BaseBinaryClassifierLightning):
 
         return logits
 
-class MolLlamaBinaryClassifierLightning(BaseBinaryClassifierLightning):
-    def __init__(self, llama_model="meta-llama/Llama-2-7b-chat-hf", 
-                 num_classes=2, embedding_dim=768,
-                 num_heads=8, num_layers=2, 
-                 use_lora=True, learning_rate=2e-5):
-        super().__init__(learning_rate)
-
-        self.config = AutoConfig.from_pretrained(llama_model)
-
-        encoder_layer = nn.TransformerEncoderLayer(d_model=embedding_dim, nhead=num_heads)
-        self.self_attention = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.projection = nn.Linear(embedding_dim, self.config.hidden_size)
-        self.classifier = nn.Linear(self.config.hidden_size, num_classes)
-
-    def forward(self, features):
-        """
-        Forward pass through MolLama model
-
-        Args:
-            features (Tensor): Preprocessed feature tensor, shape (batch_size, feature_size)
-
-        Returns:
-            Tensor: Logits for binary classification
-        """
-
-        x = self.fc1(features)
-        x = self.dropout(x)
-        logits = self.fc2(x)
-
-        return logits
     
 
 class MolFormerXLBinaryClassifierLightning(BaseBinaryClassifierLightning):

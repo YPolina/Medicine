@@ -7,3 +7,4 @@ leash-BELKA.zip
 /intermediates/embeddings
 /training/logs
 /checkpoints
+/trained_models
