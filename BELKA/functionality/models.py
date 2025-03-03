@@ -61,7 +61,7 @@ class BaseBinaryClassifierLightning(pl.LightningModule):
         return probabilities
 
 class CNNBinaryClassifierLightning(BaseBinaryClassifierLightning):
-    def __init__(self, input_dim=142, hidden_dim=32, kernel_size=3, output_dim=1, 
+    def __init__(self, input_dim=142, hidden_dim=32, kernel_size=3, output_dim=2, 
                  stride=1, padding=1, learning_rate=2e-5, max_length = 142):
         super(CNNBinaryClassifierLightning, self).__init__(learning_rate)
 
@@ -102,6 +102,7 @@ class CNNBinaryClassifierLightning(BaseBinaryClassifierLightning):
         logits = self.fc2(x)
         
         return logits
+    
 
 class ChemBertaBinaryClassifierLightning(BaseBinaryClassifierLightning):
     def __init__(self, model_name="seyonec/PubChem10M_SMILES_BPE_450k",

@@ -39,7 +39,6 @@ class IterableCNNDataset(IterableDataset):
             for i in range(len(encoded_smiles)):
                 yield torch.tensor(encoded_smiles[i], dtype=torch.float32), torch.tensor(labels[i], dtype=torch.long)
 
-
 class IterableEmbDataset(IterableDataset):
     def __init__(self, embeddings_path):
         self.embeddings_path = embeddings_path
