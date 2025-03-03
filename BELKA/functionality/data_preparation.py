@@ -16,44 +16,71 @@ from torch.utils.data import IterableDataset
 import h5py
 import pickle
 from pytorch_lightning.loggers import CSVLogger
-
-
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 
 
 class IterableCNNDataset(IterableDataset):
-    def __init__(self, encoded_smiles):
-        self.encoded_smiles = encoded_smiles
-        with h5py.File(self.encoded_smiles, "r") as h5f:
-            self.length = len(h5f["encoded_smiles"])
+    def __init__(self, encoded_path, batch_size=1000):
+        """
+        Args:
+            encoded_path (str): Path to the Parquet file containing embeddings and labels
+            batch_size (int): Number of rows to read at once for efficiency
+        """
+        self.encoded_path = encoded_path
+        self.batch_size = batch_size
+
+        self.length = self._get_length()
+
+    def _get_length(self):
+        df = pd.read_parquet(self.embeddings_path, columns=["label"])
+        return len(df)
 
     def __len__(self):
         return self.length
 
     def __iter__(self):
-        with h5py.File(self.encoded_smiles, "r") as h5f:
-            encoded_smiles = h5f["encoded_smiles"]
-            labels = h5f["labels"]
-            for i in range(len(encoded_smiles)):
-                yield torch.tensor(encoded_smiles[i], dtype=torch.float32), torch.tensor(labels[i], dtype=torch.long)
+        """Yields embeddings and labels one-by-one from the Parquet file"""
+        df_iter = pd.read_parquet(self.encoded_path, iterator=True, chunksize=self.batch_size)
+        
+        for df_batch in df_iter:
+            labels = df_batch["label"].values
+            encoded_smiles = df_batch.drop(columns=["label"]).values 
+            
+            for emb, lbl in zip(encoded_smiles, labels):
+                yield torch.tensor(emb, dtype=torch.float32), torch.tensor(lbl, dtype=torch.long)
+
 
 class IterableEmbDataset(IterableDataset):
-    def __init__(self, embeddings_path):
+    def __init__(self, embeddings_path, batch_size=1000):
+        """
+        Args:
+            embeddings_path (str): Path to the Parquet file containing embeddings and labels
+            batch_size (int): Number of rows to read at once for efficiency
+        """
         self.embeddings_path = embeddings_path
-        with h5py.File(self.embeddings_path, "r") as h5f:
-            self.length = len(h5f["embeddings"])
+        self.batch_size = batch_size
+
+        self.length = self._get_length()
+
+    def _get_length(self):
+        df = pd.read_parquet(self.embeddings_path, columns=["label"])
+        return len(df)
 
     def __len__(self):
         return self.length
 
     def __iter__(self):
-        with h5py.File(self.embeddings_path, "r") as h5f:
-            embeddings = h5f["embeddings"]
-            labels = h5f["labels"]
-            for i in range(len(embeddings)):
-                yield torch.tensor(embeddings[i], dtype=torch.float32), torch.tensor(labels[i], dtype=torch.long)
+        """Yields embeddings and labels one-by-one from the Parquet file"""
+        df_iter = pd.read_parquet(self.embeddings_path, iterator=True, chunksize=self.batch_size)
+        
+        for df_batch in df_iter:
+            labels = df_batch["label"].values
+            embeddings = df_batch.drop(columns=["label"]).values 
+            
+            for emb, lbl in zip(embeddings, labels):
+                yield torch.tensor(emb, dtype=torch.float32), torch.tensor(lbl, dtype=torch.long)
 
 
 
