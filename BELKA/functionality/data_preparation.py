@@ -1,86 +1,48 @@
-from torch.utils.data import DataLoader, Dataset
 import torch
-from sklearn.model_selection import train_test_split
 import pytorch_lightning as pl
-import lightgbm as lgb
 from lightgbm import LGBMClassifier
 from pytorch_lightning.callbacks import ModelCheckpoint
-from rdkit.Chem import rdFingerprintGenerator, AllChem
-from rdkit.DataStructs import ConvertToNumpyArray
-from rdkit import Chem
-from transformers import AutoTokenizer, AutoModel
-import numpy as np
 import tqdm
-import os 
 from torch.utils.data import IterableDataset
-import h5py
-import pickle
 from pytorch_lightning.loggers import CSVLogger
 import torch
-from torch.utils.data import Dataset, DataLoader
-import pandas as pd
 
+import torch
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
+from torch.utils.data import IterableDataset
+import dask.dataframe as dd
 
-class IterableCNNDataset(IterableDataset):
+class IterfeaturesDataset(IterableDataset):
     def __init__(self, encoded_path, batch_size=1000):
         """
         Args:
-            encoded_path (str): Path to the Parquet file containing embeddings and labels
+            encoded_path (str): Path to the Parquet file containing encoded smiles and labels
             batch_size (int): Number of rows to read at once for efficiency
+            df (dask dataframe): for efficient memory usage
         """
         self.encoded_path = encoded_path
         self.batch_size = batch_size
-
-        self.length = self._get_length()
-
-    def _get_length(self):
-        df = pd.read_parquet(self.embeddings_path, columns=["label"])
-        return len(df)
+        self.df = dd.read_parquet(self.encoded_path)
 
     def __len__(self):
-        return self.length
+        return len(self.df)
 
     def __iter__(self):
-        """Yields embeddings and labels one-by-one from the Parquet file"""
-        df_iter = pd.read_parquet(self.encoded_path, iterator=True, chunksize=self.batch_size)
-        
-        for df_batch in df_iter:
-            labels = df_batch["label"].values
-            encoded_smiles = df_batch.drop(columns=["label"]).values 
-            
-            for emb, lbl in zip(encoded_smiles, labels):
-                yield torch.tensor(emb, dtype=torch.float32), torch.tensor(lbl, dtype=torch.long)
+        """Yields encoded smiles and labels one-by-one from the Parquet file"""
 
+        partitions = self.df.to_delayed()  
+    
+        for partition in partitions:
+            df_partition = partition.compute()
+            for i in range(0, len(df_partition), self.batch_size):
+                batch = df_partition[i:i + self.batch_size]
+                labels = batch["label"].values  
+                encoded_smiles = batch.drop(columns=["label"]).values
+                
+                for enc, lbl in zip(encoded_smiles, labels):
+                    yield torch.tensor(enc, dtype=torch.float32), torch.tensor(lbl, dtype=torch.long)
 
-class IterableEmbDataset(IterableDataset):
-    def __init__(self, embeddings_path, batch_size=1000):
-        """
-        Args:
-            embeddings_path (str): Path to the Parquet file containing embeddings and labels
-            batch_size (int): Number of rows to read at once for efficiency
-        """
-        self.embeddings_path = embeddings_path
-        self.batch_size = batch_size
-
-        self.length = self._get_length()
-
-    def _get_length(self):
-        df = pd.read_parquet(self.embeddings_path, columns=["label"])
-        return len(df)
-
-    def __len__(self):
-        return self.length
-
-    def __iter__(self):
-        """Yields embeddings and labels one-by-one from the Parquet file"""
-        df_iter = pd.read_parquet(self.embeddings_path, iterator=True, chunksize=self.batch_size)
-        
-        for df_batch in df_iter:
-            labels = df_batch["label"].values
-            embeddings = df_batch.drop(columns=["label"]).values 
-            
-            for emb, lbl in zip(embeddings, labels):
-                yield torch.tensor(emb, dtype=torch.float32), torch.tensor(lbl, dtype=torch.long)
 
 
 
