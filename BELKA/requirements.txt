@@ -1,19 +1,17 @@
 pyspark == 3.4.4
 scikit-learn
-rdkit
-transformers
 matplotlib
 seaborn
 numpy
 pandas
-xgboost
 plotly
 datamol
 torch
-umap
 streamlit
-pytorch_lightning
-findspark
-bitsandbytes
-lightgbm
-peft
+pytorch-lightning==2.5.0.post0
+transformers==4.48.2
+s3fs
+smart_open
+boto3
+rdkit
+lightgbm==4.5.0

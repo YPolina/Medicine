@@ -8,3 +8,4 @@ leash-BELKA.zip
 /training/logs
 /checkpoints
 /trained_models
+*.parquet

@@ -4,14 +4,11 @@ import pandas as pd
 import numpy as np 
 
 from scipy.stats import ttest_1samp, norm, ks_2samp
-from statsmodels.stats.proportion import proportions_ztest
 
-import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 
-from sklearn.decomposition import PCA
 import streamlit as st
 
 class Analyser:
@@ -21,7 +18,7 @@ class Analyser:
     '''
 
 
-    def __init__(self, data, bits_info, model):
+    def __init__(self, data, model, bits_info = None):
         """
 
         Args:
@@ -97,7 +94,7 @@ class Analyser:
     def perform_t_test(self, observed_value, expected_value, bootstrap_distribution):
 
         """
-        T-test
+        T-testdata_preparation
         """
         t_stat, p_value = ttest_1samp(bootstrap_distribution, expected_value)
         return t_stat, p_value
