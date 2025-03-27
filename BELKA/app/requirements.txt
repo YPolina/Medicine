@@ -1,0 +1,12 @@
+pandas
+streamlit==1.42.0
+numpy
+scipy
+scikit-learn==1.6.1
+matplotlib
+plotly
+datasets
+torchmetrics
+seaborn
+rdkit
+boto3
