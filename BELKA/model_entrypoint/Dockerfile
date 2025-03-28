@@ -16,4 +16,13 @@ RUN python3 -m pip install --upgrade pip
 RUN pip3 install torch==2.6.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124 && \
     pip3 install --no-cache-dir -r requirements.txt
 
+RUN python3 -c "\
+from huggingface_hub import hf_hub_download; \
+hf_hub_download(repo_id='Palina123/HSA_MolFormerXL.ckpt', filename='HSA_MolFormer.ckpt', local_dir='/trained_models'); \
+hf_hub_download(repo_id='Palina123/sEH_MolFormer.ckpt', filename='sEH_MolFormer.ckpt', local_dir='/trained_models'); \
+hf_hub_download(repo_id='Palina123/HSA_ChemBert.ckpt', filename='HSA_ChemBert.ckpt', local_dir='/trained_models'); \
+hf_hub_download(repo_id='Palina123/sEH_ChemBert.ckpt', filename='sEH_ChemBert.ckpt', local_dir='/trained_models'); \
+hf_hub_download(repo_id='Palina123/BRD4_MolFormerXL.ckpt', filename='BRD4_MolFormer.ckpt', local_dir='/trained_models'); \
+hf_hub_download(repo_id='Palina123/BRD4_ChemBert.ckpt', filename='BRD4_ChemBert.ckpt', local_dir='/trained_models')"
+
 ENTRYPOINT ["python3", "inference.py"]
