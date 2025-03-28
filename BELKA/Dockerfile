@@ -1,15 +1,12 @@
-FROM python:3.10.12
+FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-COPY xgb_cls.pkl .
-COPY functions,py .
-
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
 
-CMD ["streamlit", "run", "app.py", "--server.port=80", "--server.address=0.0.0.0"]
+RUN pip install torch==2.6.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
+RUN pip install -r requirements.txt
 
+EXPOSE 8501
 
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]

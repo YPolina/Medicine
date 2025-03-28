@@ -1,0 +1,14 @@
+flask==3.1.0
+numpy
+rdkit
+joblib
+pandas
+datasets
+transformers==4.48.2
+lightgbm==4.5.0
+torchmetrics
+pytorch-lightning==2.5.0.post0
+s3fs
+scikit-learn
+boto3
+xgboost==2.1.3
